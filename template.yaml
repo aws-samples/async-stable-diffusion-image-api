@@ -1,0 +1,360 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  async-stable-diffusion-image-mgmt-api
+
+  Sample SAM Template for image-gpt-api
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+  EndpointName:
+    Type: String
+    Default: test
+
+Resources:
+  ImageGPTApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+
+  #########
+  # WEBSOCKET API RESOURCES
+  #########
+  ImageWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: ImageWebSocketApi
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+  ImageWebsocketApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ImageWebSocketApi
+      StageName: "prod"
+      DeploymentId: !Ref Deployment
+
+  WebSocketRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ImageWebSocketApi
+      RouteKey: $default
+      AuthorizationType: NONE
+      Target: !Sub integrations/${WebSocketIntegration}
+
+  Deployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - WebSocketRoute
+    Properties:
+      ApiId: !Ref ImageWebSocketApi
+      StageName: ""
+
+  WebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ImageWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StoreConnectionFunction.Arn}/invocations
+  StoreConnectionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: app/
+      Handler: store_conn.lambda_handler
+      Runtime: python3.9
+      Timeout: 15
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ImageApiConnectionTable
+      Architectures:
+        - x86_64
+      Policies:
+        - Version: "2012-10-17" # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource:
+                - !GetAtt ImageApiConnectionTable.Arn
+  WebsocketLambdaIntegrationPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - ImageWebSocketApi
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StoreConnectionFunction
+      Principal: apigateway.amazonaws.com
+  ################
+  # END WEBSOCKET RESOURCES
+  ################
+  ExecuteSFNFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: app/
+      Handler: execute_sfn.lambda_handler
+      Runtime: python3.9
+      Environment:
+        Variables:
+          SFN_ARN: !GetAtt GenerateImageSFN.Arn
+      Policies:
+        - Version: "2012-10-17" # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource:
+                - !GetAtt GenerateImageSFN.Arn
+      Events:
+        ImageGPT:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ImageGPTApi
+            Path: /generate
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+
+  ImageGPTFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: app/
+      Handler: generate.lambda_handler
+      Runtime: python3.9
+      Timeout: 120
+      Environment:
+        Variables:
+          ENDPOINT_NAME: !Ref EndpointName
+      Architectures:
+        - x86_64
+      Policies:
+        - Version: "2012-10-17" # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - sagemaker:InvokeEndpoint
+              Resource:
+                - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${EndpointName}"
+  CallbackFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: app/
+      Handler: issue_callback.lambda_handler
+      Runtime: python3.9
+      Timeout: 120
+      Environment:
+        Variables:
+          API_ID: !GetAtt ImageWebSocketApi.ApiId
+          TABLE_NAME: !Ref ImageApiConnectionTable
+      Architectures:
+        - x86_64
+      Policies:
+        - Version: "2012-10-17" # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - "execute-api:ManageConnections"
+              Resource:
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageWebSocketApi}/*"
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+              Resource:
+                - !GetAtt ImageApiConnectionTable.Arn
+
+  SaveImageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: app/
+      Handler: save_image.lambda_handler
+      Runtime: python3.9
+      Timeout: 15
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref ImageBucket
+          TABLE_NAME: !Ref ImageTable
+      Architectures:
+        - x86_64
+      Policies:
+        - Version: "2012-10-17" # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource:
+                - !GetAtt ImageBucket.Arn
+                - !Join ["", [!GetAtt ImageBucket.Arn, "/*"]]
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource:
+                - !GetAtt ImageTable.Arn
+      Events:
+        ImageGPT:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ImageGPTApi
+            Path: /save
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+  GetImagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: app/
+      Handler: get_images.lambda_handler
+      Runtime: python3.9
+      Timeout: 15
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ImageTable
+          CDN_URL: !Join ["", [!GetAtt CloudFrontDistribution.DomainName, "/"]]
+      Architectures:
+        - x86_64
+      Policies:
+        - Version: "2012-10-17" # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Scan
+              Resource:
+                - !GetAtt ImageTable.Arn
+      Events:
+        ImageGPT:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ImageGPTApi
+            Path: /images
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-saved-images"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+  CloudFrontOriginAccessControl:
+    Type: "AWS::CloudFront::OriginAccessControl"
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${ImageBucket}-AccessControl"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: S3Origin
+            DomainName: !Sub "${ImageBucket}.s3.${AWS::Region}.amazonaws.com"
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+
+        DefaultCacheBehavior:
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+        Enabled: true
+
+  ImageBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket: !Ref ImageBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${ImageBucket}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+  UsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ImageGPTApi
+          Stage: !Ref ImageGPTApiStage
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Enabled: True
+
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref UsagePlan
+  ######################
+  # STEP FUNCTION RESOURCES
+  ######################
+  GenerateImageSFN:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: EXPRESS
+      DefinitionUri: statemachine/generate_image.asl.json
+      DefinitionSubstitutions:
+        ImageGPTFunctionArn: !GetAtt ImageGPTFunction.Arn
+        CallbackFunctionArn: !GetAtt CallbackFunction.Arn
+      Policies: # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ImageGPTFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CallbackFunction
+
+  ################
+  # DYNAMO TABLES
+  ###############
+  ImageTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: image-table
+
+  ImageApiConnectionTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: image-connecitons-table
+      PrimaryKey:
+        Type: String
+        Name: executionArn
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  ImageGPTApi:
+    Description: "API Gateway endpoint URL for Prod stage for ImageGPT function"
+    Value: !Sub "https://${ImageGPTApi}.execute-api.${AWS::Region}.amazonaws.com/{Stage}/"
+  WebsocketAPI:
+    Description: "Web socket API url"
+    Value: !GetAtt ImageWebSocketApi.ApiEndpoint
+  ImageGPTFunction:
+    Description: "Image GPT Lambda Function ARN"
+    Value: !GetAtt ImageGPTFunction.Arn
+  ImageGPTFunctionIamRole:
+    Description: "Implicit IAM Role created for ImageGPT function"
+    Value: !GetAtt ImageGPTFunctionRole.Arn
+  CloudFrontDistro:
+    Description: "The URL for the Cloudfront Distribution."
+    Value: !GetAtt CloudFrontDistribution.DomainName

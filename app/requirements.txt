@@ -1,0 +1,4 @@
+requests
+boto
+Pillow
+urllib3<2
