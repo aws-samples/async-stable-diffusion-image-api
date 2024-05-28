@@ -37,7 +37,7 @@ def lambda_handler(event, context):
     
     # DYNAMO ACTIONS
     LOGGER.info(f"Writing image data to dynamodb for: {image_name}")
-    dynamodb.put_item(
+    response = dynamodb.put_item(
         TableName=TABLE_NAME,
         Item={
             'id': {'S': str(uid)},
@@ -47,13 +47,13 @@ def lambda_handler(event, context):
             'date_time': {'S': date_time}
         }
     )
-
+    LOGGER.info(f"DynamoDB response: {response}")
     return {
         "statusCode": 200,
         "headers": {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Credentials": True,
          },
-        "body": json.dumps({'message': 'success'})
+        "body": json.dumps({'id': str(uid)})
     }
     

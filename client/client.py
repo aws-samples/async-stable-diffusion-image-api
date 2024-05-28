@@ -7,10 +7,10 @@ from io import BytesIO
 from PIL import Image
 
 
-API_KEY="API_KEY"
+API_KEY=""
 
 async def connect_to_websocket(exec_id):
-    uri = "wss://WEB_SOCKET_API_ID.execute-api.us-east-1.amazonaws.com/prod/"
+    uri = ""
 
     async with websockets.connect(uri) as websocket:
         # Sending a message
@@ -29,7 +29,7 @@ async def connect_to_websocket(exec_id):
                 return json.loads(message)
 
 if __name__ == "__main__":
-    url = "https://REST_API_ID.execute-api.us-east-1.amazonaws.com/prod/generate"
+    url = "https://.execute-api.us-east-1.amazonaws.com/prod/generate"
     data = {"prompt": "cat lying on beach with a large brimmed sun hat, playing with a ball of yarn"}
     response = requests.post(url, json=data, headers={"x-api-key": API_KEY}).json()
     resp = asyncio.get_event_loop().run_until_complete(connect_to_websocket(response['executionArn']))

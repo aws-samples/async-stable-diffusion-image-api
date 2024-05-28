@@ -23,9 +23,10 @@ def lambda_handler(event, context):
       # Extract attribute values
       LOGGER.info(item)
       image = {
-          "objectUrl": CDN_URL + item['object_key']['S'],
-          "prompt": item['prompt']['S'],
-          "imageName": item['image_name']['S'],
+        "id": item['id']['S'],
+        "objectUrl": CDN_URL + item['object_key']['S'],
+        "prompt": item['prompt']['S'],
+        "imageName": item['image_name']['S'],
       }
       images.append(image)
 

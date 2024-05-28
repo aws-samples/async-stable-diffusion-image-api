@@ -1,8 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: >
+Description: |
   async-stable-diffusion-image-mgmt-api
-
   Sample SAM Template for image-gpt-api
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
@@ -19,15 +18,124 @@ Parameters:
     Default: test
 
 Resources:
+  AsyncImageApiKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for Async Image API
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: key-policy-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: "Allow Lambda Use of the Key"
+            Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "kms:ViaService": !Sub "lambda.${AWS::Region}.amazonaws.com"
+          - Sid: "Allow CloudWatch Logs Use of the Key"
+            Effect: "Allow"
+            Principal:
+              Service: "logs.amazonaws.com"
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "kms:ViaService": !Sub "logs.${AWS::Region}.amazonaws.com"
+          - Sid: "Allow API Gateway Use of the Key"
+            Effect: "Allow"
+            Principal:
+              Service: "apigateway.amazonaws.com"
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "kms:ViaService": !Sub "apigateway.${AWS::Region}.amazonaws.com"
+          - Sid: "Allow CloudWatch Logs Specific Log Group"
+            Effect: "Allow"
+            Principal:
+              Service: "logs.amazonaws.com"
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+            Condition:
+              ArnLike:
+                "kms:EncryptionContext:aws:logs:arn": !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+
+  AsyncImageApiGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+
+  ImageGptApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: image-api-logs
+      RetentionInDays: 60
+      KmsKeyId: !GetAtt AsyncImageApiKMSKey.Arn
+
+  WebsocketApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: image-api-websocket-api-logs
+      RetentionInDays: 60
+      KmsKeyId: !GetAtt AsyncImageApiKMSKey.Arn
+
   ImageGPTApi:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref Stage
+      TracingEnabled: true
+      CacheClusterEnabled: true
+      CacheClusterSize: "0.5"
       Cors:
         AllowMethods: "'*'"
         AllowHeaders: "'*'"
         AllowOrigin: "'*'"
-
+      AccessLogSetting:
+        DestinationArn: !GetAtt ImageGptApiLogGroup.Arn
+        Format: $context.identity.sourceIp - - [$context.requestTime]
+          "$context.httpMethod $context.routeKey $context.protocol"
+          $context.status $context.responseLength $context.requestId
+          $context.extendedRequestId
   #########
   # WEBSOCKET API RESOURCES
   #########
@@ -36,14 +144,20 @@ Resources:
     Properties:
       Name: ImageWebSocketApi
       ProtocolType: WEBSOCKET
-      RouteSelectionExpression: "$request.body.action"
+      RouteSelectionExpression: $request.body.action
 
   ImageWebsocketApiStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
       ApiId: !Ref ImageWebSocketApi
-      StageName: "prod"
+      StageName: prod
       DeploymentId: !Ref Deployment
+      AccessLogSettings:
+        DestinationArn: !GetAtt ImageGptApiLogGroup.Arn
+        Format: $context.identity.sourceIp - - [$context.requestTime]
+          "$context.httpMethod $context.routeKey $context.protocol"
+          $context.status $context.responseLength $context.requestId
+          $context.extendedRequestId
 
   WebSocketRoute:
     Type: AWS::ApiGatewayV2::Route
@@ -67,26 +181,50 @@ Resources:
       ApiId: !Ref ImageWebSocketApi
       IntegrationType: AWS_PROXY
       IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StoreConnectionFunction.Arn}/invocations
+
+  StoreConnectionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: LambdaFunctionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17" # Policy Document
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt ImageApiConnectionTable.Arn
+
   StoreConnectionFunction:
     Type: AWS::Serverless::Function
+    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
+    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
     Properties:
       CodeUri: app/
       Handler: store_conn.lambda_handler
       Runtime: python3.9
       Timeout: 15
+      ReservedConcurrentExecutions: 100
+      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
       Environment:
         Variables:
           TABLE_NAME: !Ref ImageApiConnectionTable
       Architectures:
         - x86_64
-      Policies:
-        - Version: "2012-10-17" # Policy Document
-          Statement:
-            - Effect: Allow
-              Action:
-                - dynamodb:PutItem
-              Resource:
-                - !GetAtt ImageApiConnectionTable.Arn
+      Role: !GetAtt StoreConnectionRole.Arn
+
   WebsocketLambdaIntegrationPermission:
     Type: AWS::Lambda::Permission
     DependsOn:
@@ -95,26 +233,50 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref StoreConnectionFunction
       Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageWebSocketApi}/*"
   ################
   # END WEBSOCKET RESOURCES
   ################
+
+  ExecuteSFNFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: LambdaFunctionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17" # Policy Document
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !GetAtt GenerateImageSFN.Arn
+
   ExecuteSFNFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
+    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
     Properties:
+      ReservedConcurrentExecutions: 100
+      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
       CodeUri: app/
       Handler: execute_sfn.lambda_handler
       Runtime: python3.9
       Environment:
         Variables:
           SFN_ARN: !GetAtt GenerateImageSFN.Arn
-      Policies:
-        - Version: "2012-10-17" # Policy Document
-          Statement:
-            - Effect: Allow
-              Action:
-                - states:StartExecution
-              Resource:
-                - !GetAtt GenerateImageSFN.Arn
+      Role: !GetAtt ExecuteSFNFunctionRole.Arn
       Events:
         ImageGPT:
           Type: Api
@@ -125,9 +287,37 @@ Resources:
             Auth:
               ApiKeyRequired: true
 
+  GenerateFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: LambdaFunctionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17" # Policy Document
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:InvokeEndpoint
+                Resource:
+                  - !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${EndpointName}
   ImageGPTFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
+    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
     Properties:
+      ReservedConcurrentExecutions: 100
+      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
       CodeUri: app/
       Handler: generate.lambda_handler
       Runtime: python3.9
@@ -137,17 +327,44 @@ Resources:
           ENDPOINT_NAME: !Ref EndpointName
       Architectures:
         - x86_64
+      Role: !GetAtt GenerateFunctionRole.Arn
+
+  CallbackFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
       Policies:
-        - Version: "2012-10-17" # Policy Document
-          Statement:
-            - Effect: Allow
-              Action:
-                - sagemaker:InvokeEndpoint
-              Resource:
-                - !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${EndpointName}"
+        - PolicyName: LambdaFunctionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17" # Policy Document
+            Statement:
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource:
+                  - !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageWebSocketApi}/*
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ImageApiConnectionTable.Arn
   CallbackFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
+    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
     Properties:
+      ReservedConcurrentExecutions: 100
+      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
       CodeUri: app/
       Handler: issue_callback.lambda_handler
       Runtime: python3.9
@@ -158,23 +375,48 @@ Resources:
           TABLE_NAME: !Ref ImageApiConnectionTable
       Architectures:
         - x86_64
-      Policies:
-        - Version: "2012-10-17" # Policy Document
-          Statement:
-            - Effect: Allow
-              Action:
-                - "execute-api:ManageConnections"
-              Resource:
-                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageWebSocketApi}/*"
-            - Effect: Allow
-              Action:
-                - dynamodb:Query
-              Resource:
-                - !GetAtt ImageApiConnectionTable.Arn
+      Role: !GetAtt CallbackFunctionRole.Arn
 
+  SaveImagesFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: LambdaFunctionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17" # Policy Document
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !GetAtt ImageBucket.Arn
+                  - !Join
+                    - ""
+                    - - !GetAtt ImageBucket.Arn
+                      - /*
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource:
+                  - !GetAtt ImageTable.Arn
   SaveImageFunction:
     Type: AWS::Serverless::Function
+    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
+    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
     Properties:
+      ReservedConcurrentExecutions: 100
+      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
       CodeUri: app/
       Handler: save_image.lambda_handler
       Runtime: python3.9
@@ -185,20 +427,7 @@ Resources:
           TABLE_NAME: !Ref ImageTable
       Architectures:
         - x86_64
-      Policies:
-        - Version: "2012-10-17" # Policy Document
-          Statement:
-            - Effect: Allow
-              Action:
-                - s3:PutObject
-              Resource:
-                - !GetAtt ImageBucket.Arn
-                - !Join ["", [!GetAtt ImageBucket.Arn, "/*"]]
-            - Effect: Allow
-              Action:
-                - dynamodb:PutItem
-              Resource:
-                - !GetAtt ImageTable.Arn
+      Role: !GetAtt SaveImagesFunctionRole.Arn
       Events:
         ImageGPT:
           Type: Api
@@ -208,9 +437,39 @@ Resources:
             Method: post
             Auth:
               ApiKeyRequired: true
+
+  GetImagesFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: LambdaFunctionRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt ImageTable.Arn
+
   GetImagesFunction:
     Type: AWS::Serverless::Function
+    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
+    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
     Properties:
+      ReservedConcurrentExecutions: 100
+      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
       CodeUri: app/
       Handler: get_images.lambda_handler
       Runtime: python3.9
@@ -218,17 +477,13 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref ImageTable
-          CDN_URL: !Join ["", [!GetAtt CloudFrontDistribution.DomainName, "/"]]
+          CDN_URL: !Join
+            - ""
+            - - !GetAtt CloudFrontDistribution.DomainName
+              - /
       Architectures:
         - x86_64
-      Policies:
-        - Version: "2012-10-17" # Policy Document
-          Statement:
-            - Effect: Allow
-              Action:
-                - dynamodb:Scan
-              Resource:
-                - !GetAtt ImageTable.Arn
+      Role: !GetAtt GetImagesFunctionRole.Arn
       Events:
         ImageGPT:
           Type: Api
@@ -242,39 +497,105 @@ Resources:
   ImageBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-saved-images"
+      BucketName: !Sub ${AWS::AccountId}-${AWS::Region}-saved-images
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LogBucket
+        LogFilePrefix: access-logs/
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+  # Log bucket
+  LogBucket:
+    # checkov:skip=CKV_AWS_18:Ensure the S3 bucket has access logging enabled
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::AccountId}-${AWS::Region}-saved-images-access-logs
+      AccessControl: LogDeliveryWrite
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      VersioningConfiguration:
+        Status: Enabled
+  # Bucket policy to allow the main bucket to write logs to the log bucket
+  LogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${LogBucket}/access-logs/*
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:s3:::${ImageBucket}
   CloudFrontOriginAccessControl:
-    Type: "AWS::CloudFront::OriginAccessControl"
+    Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub "${ImageBucket}-AccessControl"
+        Name: !Sub ${ImageBucket}-AccessControl
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  CloudFrontLogBucket:
+    Type: AWS::S3::Bucket
+    # checkov:skip=CKV_AWS_18:Ensure the S3 bucket has access logging enabled
+    Properties:
+      BucketName: async-image-api-cloudfront-distro-logs-bucket
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
+      VersioningConfiguration:
+        Status: Enabled
   CloudFrontDistribution:
-    Type: "AWS::CloudFront::Distribution"
+    Type: AWS::CloudFront::Distribution
+    # checkov:skip=CKV_AWS_68:CloudFront Distribution should have WAF enabled
     Properties:
       DistributionConfig:
+        Logging:
+          Bucket: !Sub ${CloudFrontLogBucket}.s3.amazonaws.com
+          Prefix: cloudfront-logs/
         Origins:
           - Id: S3Origin
-            DomainName: !Sub "${ImageBucket}.s3.${AWS::Region}.amazonaws.com"
+            DomainName: !Sub ${ImageBucket}.s3.${AWS::Region}.amazonaws.com
             OriginAccessControlId: !Ref CloudFrontOriginAccessControl
             S3OriginConfig:
               OriginAccessIdentity: ""
-
         DefaultCacheBehavior:
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           TargetOriginId: S3Origin
           ViewerProtocolPolicy: redirect-to-https
         Enabled: true
+        ViewerCertificate:
+          MinimumProtocolVersion: TLSv1.2_2018
+          CloudFrontDefaultCertificate: true
 
   ImageBucketPolicy:
-    Type: "AWS::S3::BucketPolicy"
+    Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref ImageBucket
       PolicyDocument:
@@ -285,21 +606,21 @@ Resources:
             Principal:
               Service: cloudfront.amazonaws.com
             Action: s3:GetObject
-            Resource: !Sub "arn:aws:s3:::${ImageBucket}/*"
+            Resource: !Sub arn:aws:s3:::${ImageBucket}/*
             Condition:
               StringEquals:
-                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
 
   UsagePlan:
     Type: AWS::ApiGateway::UsagePlan
     Properties:
       ApiStages:
         - ApiId: !Ref ImageGPTApi
-          Stage: !Ref ImageGPTApiStage
+          Stage: !Ref Stage
   ApiKey:
     Type: AWS::ApiGateway::ApiKey
     Properties:
-      Enabled: True
+      Enabled: true
 
   UsagePlanKey:
     Type: AWS::ApiGateway::UsagePlanKey
@@ -314,15 +635,16 @@ Resources:
     Type: AWS::Serverless::StateMachine
     Properties:
       Type: EXPRESS
-      DefinitionUri: statemachine/generate_image.asl.json
       DefinitionSubstitutions:
         ImageGPTFunctionArn: !GetAtt ImageGPTFunction.Arn
         CallbackFunctionArn: !GetAtt CallbackFunction.Arn
-      Policies: # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+      Policies:
+        # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
         - LambdaInvokePolicy:
             FunctionName: !Ref ImageGPTFunction
         - LambdaInvokePolicy:
             FunctionName: !Ref CallbackFunction
+      DefinitionUri: statemachine/generate_image.asl.json
 
   ################
   # DYNAMO TABLES
@@ -344,17 +666,17 @@ Outputs:
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
   ImageGPTApi:
-    Description: "API Gateway endpoint URL for Prod stage for ImageGPT function"
-    Value: !Sub "https://${ImageGPTApi}.execute-api.${AWS::Region}.amazonaws.com/{Stage}/"
+    Description: API Gateway endpoint URL for Prod stage for ImageGPT function
+    Value: !Sub https://${ImageGPTApi}.execute-api.${AWS::Region}.amazonaws.com/{Stage}/
   WebsocketAPI:
-    Description: "Web socket API url"
+    Description: Web socket API url
     Value: !GetAtt ImageWebSocketApi.ApiEndpoint
   ImageGPTFunction:
-    Description: "Image GPT Lambda Function ARN"
+    Description: Image GPT Lambda Function ARN
     Value: !GetAtt ImageGPTFunction.Arn
   ImageGPTFunctionIamRole:
-    Description: "Implicit IAM Role created for ImageGPT function"
-    Value: !GetAtt ImageGPTFunctionRole.Arn
+    Description: Implicit IAM Role created for ImageGPT function
+    Value: !GetAtt GenerateFunctionRole.Arn
   CloudFrontDistro:
-    Description: "The URL for the Cloudfront Distribution."
+    Description: The URL for the Cloudfront Distribution.
     Value: !GetAtt CloudFrontDistribution.DomainName
