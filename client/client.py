@@ -29,7 +29,7 @@ async def connect_to_websocket(exec_id):
                 return json.loads(message)
 
 if __name__ == "__main__":
-    url = "https://.execute-api.us-east-1.amazonaws.com/prod/generate"
+    url = "https://ddssdkjh.execute-api.us-east-1.amazonaws.com/prod/generate"
     data = {"prompt": "cat lying on beach with a large brimmed sun hat, playing with a ball of yarn"}
     response = requests.post(url, json=data, headers={"x-api-key": API_KEY}).json()
     resp = asyncio.get_event_loop().run_until_complete(connect_to_websocket(response['executionArn']))

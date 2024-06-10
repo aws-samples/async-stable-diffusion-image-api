@@ -33,62 +33,62 @@ Resources:
                 - !Sub arn:aws:iam::${AWS::AccountId}:root
             Action: kms:*
             Resource: "*"
-          - Sid: "Allow Lambda Use of the Key"
-            Effect: "Allow"
+          - Sid: Allow Lambda Use of the Key
+            Effect: Allow
             Principal:
-              Service: "lambda.amazonaws.com"
+              Service: lambda.amazonaws.com
             Action:
-              - "kms:Encrypt"
-              - "kms:Decrypt"
-              - "kms:ReEncrypt*"
-              - "kms:GenerateDataKey*"
-              - "kms:DescribeKey"
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
             Resource: "*"
             Condition:
               StringEquals:
-                "kms:ViaService": !Sub "lambda.${AWS::Region}.amazonaws.com"
-          - Sid: "Allow CloudWatch Logs Use of the Key"
-            Effect: "Allow"
+                kms:ViaService: !Sub lambda.${AWS::Region}.amazonaws.com
+          - Sid: Allow CloudWatch Logs Use of the Key
+            Effect: Allow
             Principal:
-              Service: "logs.amazonaws.com"
+              Service: logs.amazonaws.com
             Action:
-              - "kms:Encrypt"
-              - "kms:Decrypt"
-              - "kms:ReEncrypt*"
-              - "kms:GenerateDataKey*"
-              - "kms:DescribeKey"
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
             Resource: "*"
             Condition:
               StringEquals:
-                "kms:ViaService": !Sub "logs.${AWS::Region}.amazonaws.com"
-          - Sid: "Allow API Gateway Use of the Key"
-            Effect: "Allow"
+                kms:ViaService: !Sub logs.${AWS::Region}.amazonaws.com
+          - Sid: Allow API Gateway Use of the Key
+            Effect: Allow
             Principal:
-              Service: "apigateway.amazonaws.com"
+              Service: apigateway.amazonaws.com
             Action:
-              - "kms:Encrypt"
-              - "kms:Decrypt"
-              - "kms:ReEncrypt*"
-              - "kms:GenerateDataKey*"
-              - "kms:DescribeKey"
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
             Resource: "*"
             Condition:
               StringEquals:
-                "kms:ViaService": !Sub "apigateway.${AWS::Region}.amazonaws.com"
-          - Sid: "Allow CloudWatch Logs Specific Log Group"
-            Effect: "Allow"
+                kms:ViaService: !Sub apigateway.${AWS::Region}.amazonaws.com
+          - Sid: Allow CloudWatch Logs Specific Log Group
+            Effect: Allow
             Principal:
-              Service: "logs.amazonaws.com"
+              Service: logs.amazonaws.com
             Action:
-              - "kms:Encrypt"
-              - "kms:Decrypt"
-              - "kms:ReEncrypt*"
-              - "kms:GenerateDataKey*"
-              - "kms:DescribeKey"
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
             Resource: "*"
             Condition:
               ArnLike:
-                "kms:EncryptionContext:aws:logs:arn": !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+                kms:EncryptionContext:aws:logs:arn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
 
   AsyncImageApiGatewayRole:
     Type: AWS::IAM::Role
@@ -233,7 +233,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref StoreConnectionFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageWebSocketApi}/*"
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ImageWebSocketApi}/*
   ################
   # END WEBSOCKET RESOURCES
   ################
@@ -617,6 +617,9 @@ Resources:
       ApiStages:
         - ApiId: !Ref ImageGPTApi
           Stage: !Ref Stage
+    DependsOn:
+      - ImageGPTApiStage
+
   ApiKey:
     Type: AWS::ApiGateway::ApiKey
     Properties:
