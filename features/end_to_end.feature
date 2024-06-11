@@ -7,9 +7,3 @@ Feature: End to End Test
       a kitten is attempting to navigate through a laser maze. There is a safe in the background.
       """
     Then I should recieve a response with encoded image data.
-    And I will save that image using /save with the name
-      """
-      Kitten Mission Impastable
-      """
-    And I should be able to retrieve the images data using /images endpoint
-#And I should be able to view the image in my browser.

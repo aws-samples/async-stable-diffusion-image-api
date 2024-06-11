@@ -22,6 +22,7 @@ Resources:
     Type: AWS::KMS::Key
     Properties:
       Description: KMS key for Async Image API
+      EnableKeyRotation: true
       KeyPolicy:
         Version: "2012-10-17"
         Id: key-policy-1
@@ -377,240 +378,6 @@ Resources:
         - x86_64
       Role: !GetAtt CallbackFunctionRole.Arn
 
-  SaveImagesFunctionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
-        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
-      Policies:
-        - PolicyName: LambdaFunctionRolePolicy
-          PolicyDocument:
-            Version: "2012-10-17" # Policy Document
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                Resource:
-                  - !GetAtt ImageBucket.Arn
-                  - !Join
-                    - ""
-                    - - !GetAtt ImageBucket.Arn
-                      - /*
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                Resource:
-                  - !GetAtt ImageTable.Arn
-  SaveImageFunction:
-    Type: AWS::Serverless::Function
-    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
-    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
-    Properties:
-      ReservedConcurrentExecutions: 100
-      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
-      CodeUri: app/
-      Handler: save_image.lambda_handler
-      Runtime: python3.9
-      Timeout: 15
-      Environment:
-        Variables:
-          BUCKET_NAME: !Ref ImageBucket
-          TABLE_NAME: !Ref ImageTable
-      Architectures:
-        - x86_64
-      Role: !GetAtt SaveImagesFunctionRole.Arn
-      Events:
-        ImageGPT:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ImageGPTApi
-            Path: /save
-            Method: post
-            Auth:
-              ApiKeyRequired: true
-
-  GetImagesFunctionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
-        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
-      Policies:
-        - PolicyName: LambdaFunctionRolePolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:Scan
-                Resource:
-                  - !GetAtt ImageTable.Arn
-
-  GetImagesFunction:
-    Type: AWS::Serverless::Function
-    # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
-    # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
-    Properties:
-      ReservedConcurrentExecutions: 100
-      KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
-      CodeUri: app/
-      Handler: get_images.lambda_handler
-      Runtime: python3.9
-      Timeout: 15
-      Environment:
-        Variables:
-          TABLE_NAME: !Ref ImageTable
-          CDN_URL: !Join
-            - ""
-            - - !GetAtt CloudFrontDistribution.DomainName
-              - /
-      Architectures:
-        - x86_64
-      Role: !GetAtt GetImagesFunctionRole.Arn
-      Events:
-        ImageGPT:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ImageGPTApi
-            Path: /images
-            Method: get
-            Auth:
-              ApiKeyRequired: true
-
-  ImageBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub ${AWS::AccountId}-${AWS::Region}-saved-images
-      LoggingConfiguration:
-        DestinationBucketName: !Ref LogBucket
-        LogFilePrefix: access-logs/
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Enabled
-  # Log bucket
-  LogBucket:
-    # checkov:skip=CKV_AWS_18:Ensure the S3 bucket has access logging enabled
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub ${AWS::AccountId}-${AWS::Region}-saved-images-access-logs
-      AccessControl: LogDeliveryWrite
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: ObjectWriter
-      VersioningConfiguration:
-        Status: Enabled
-  # Bucket policy to allow the main bucket to write logs to the log bucket
-  LogBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref LogBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: logging.s3.amazonaws.com
-            Action: s3:PutObject
-            Resource: !Sub arn:aws:s3:::${LogBucket}/access-logs/*
-            Condition:
-              StringEquals:
-                aws:SourceAccount: !Ref AWS::AccountId
-              ArnLike:
-                aws:SourceArn: !Sub arn:aws:s3:::${ImageBucket}
-  CloudFrontOriginAccessControl:
-    Type: AWS::CloudFront::OriginAccessControl
-    Properties:
-      OriginAccessControlConfig:
-        Name: !Sub ${ImageBucket}-AccessControl
-        OriginAccessControlOriginType: s3
-        SigningBehavior: always
-        SigningProtocol: sigv4
-
-  CloudFrontLogBucket:
-    Type: AWS::S3::Bucket
-    # checkov:skip=CKV_AWS_18:Ensure the S3 bucket has access logging enabled
-    Properties:
-      BucketName: async-image-api-cloudfront-distro-logs-bucket
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: ObjectWriter
-      VersioningConfiguration:
-        Status: Enabled
-  CloudFrontDistribution:
-    Type: AWS::CloudFront::Distribution
-    # checkov:skip=CKV_AWS_68:CloudFront Distribution should have WAF enabled
-    Properties:
-      DistributionConfig:
-        Logging:
-          Bucket: !Sub ${CloudFrontLogBucket}.s3.amazonaws.com
-          Prefix: cloudfront-logs/
-        Origins:
-          - Id: S3Origin
-            DomainName: !Sub ${ImageBucket}.s3.${AWS::Region}.amazonaws.com
-            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
-            S3OriginConfig:
-              OriginAccessIdentity: ""
-        DefaultCacheBehavior:
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
-          TargetOriginId: S3Origin
-          ViewerProtocolPolicy: redirect-to-https
-        Enabled: true
-        ViewerCertificate:
-          MinimumProtocolVersion: TLSv1.2_2018
-          CloudFrontDefaultCertificate: true
-
-  ImageBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref ImageBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: AllowCloudFrontAccess
-            Effect: Allow
-            Principal:
-              Service: cloudfront.amazonaws.com
-            Action: s3:GetObject
-            Resource: !Sub arn:aws:s3:::${ImageBucket}/*
-            Condition:
-              StringEquals:
-                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
-
   UsagePlan:
     Type: AWS::ApiGateway::UsagePlan
     Properties:
@@ -652,18 +419,27 @@ Resources:
   ################
   # DYNAMO TABLES
   ###############
-  ImageTable:
-    Type: AWS::Serverless::SimpleTable
-    Properties:
-      TableName: image-table
-
   ImageApiConnectionTable:
-    Type: AWS::Serverless::SimpleTable
+    Type: AWS::DynamoDB::Table
+    # checkov:skip=CKV_AWS_119:Ensure DynamoDB Tables are encrypted using a KMS Customer Managed CMK.
+    # NOTE: Using AWS Managed Key for this sample. Use CMK for production implementation.
     Properties:
-      TableName: image-connecitons-table
-      PrimaryKey:
-        Type: String
-        Name: executionArn
+      TableName: image-connections-table
+      AttributeDefinitions:
+        - AttributeName: executionArn
+          AttributeType: S
+      KeySchema:
+        - AttributeName: executionArn
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expire_at
+        Enabled: true
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
@@ -680,6 +456,3 @@ Outputs:
   ImageGPTFunctionIamRole:
     Description: Implicit IAM Role created for ImageGPT function
     Value: !GetAtt GenerateFunctionRole.Arn
-  CloudFrontDistro:
-    Description: The URL for the Cloudfront Distribution.
-    Value: !GetAtt CloudFrontDistribution.DomainName

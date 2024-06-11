@@ -1,0 +1,4 @@
+behave
+black
+boto3
+pillow
