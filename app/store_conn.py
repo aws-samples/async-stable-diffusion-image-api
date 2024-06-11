@@ -1,7 +1,7 @@
 import boto3
 import logging
 import os
-import datetime
+import time
 import json
 import uuid
 
@@ -16,7 +16,8 @@ def lambda_handler(event, context):
     LOGGER.info(event_body)
     exec_arn = event_body.get("data").get("executionArn")
     connection_id = event.get("requestContext").get("connectionId")
-    date_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    date_time = int(time.time())
+    expire_at = int(date_time) + 300 #5 minute TTL
     uid = uuid.uuid4()
 
     # DYNAMO ACTIONS
@@ -27,7 +28,8 @@ def lambda_handler(event, context):
             'id': {'S': str(uid)},
             "executionArn": {'S': exec_arn},
             'connectionId': {'S': connection_id},
-            'date_time': {'S': date_time}
+            'date_time': {'S': str(date_time)},
+            'expire_at': {'S': str(expire_at)}
         }
     )
     LOGGER.info("Write Success!")

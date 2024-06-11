@@ -25,7 +25,3 @@ def before_all(context):
         f"https://{os.environ.get('REST_API_ID')}.execute-api.us-east-1.amazonaws.com/prod/"
     )
 
-
-def after_all(context):
-    if context.endpoint_exists:
-        dynamo_client = boto3.client("dynamodb")
