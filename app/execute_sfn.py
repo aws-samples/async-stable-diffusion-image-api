@@ -10,6 +10,12 @@ SFN_ARN = os.environ.get("SFN_ARN")
 
 
 def lambda_handler(event, context):
+    """
+    Function responsible for starting the step function execution.
+    :param event: payload from the API Gateway with the prompt to be sent to the model.
+    :param context: lambda context
+    :return: response with the execution arn
+    """
     LOGGER.info(f"Recieved Payload: {event}")
     body = json.loads(event.get("body"))
     payload = {"prompt": body.get("prompt")}
@@ -17,7 +23,6 @@ def lambda_handler(event, context):
         stateMachineArn=SFN_ARN,
         input=json.dumps(payload),
     )
-    print(response)
     return {
         "statusCode": 200,
         "headers": {

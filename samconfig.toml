@@ -4,7 +4,7 @@ version = 0.1
 
 [default]
 [default.global.parameters]
-stack_name = "image-gpt-api"
+stack_name = "async-stable-diffusion-api"
 
 [default.build.parameters]
 cached = true
@@ -18,9 +18,9 @@ capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
 on_failure = "DELETE"
-s3_prefix = "image-gpt-api"
+s3_prefix = "async-stable-diffusion-api"
 region = "us-east-1"
-parameter_overrides = "Stage=\"prod\" EndpointName=\"test\""
+parameter_overrides = "Stage=\"prod\" EndpointName=\"test\"" # CUSTOMIZE ENDPOINT NAME AND STAGE HERE
 image_repositories = []
 
 [default.package.parameters]

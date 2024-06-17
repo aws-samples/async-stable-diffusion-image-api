@@ -1,7 +1,6 @@
 import boto3
 import logging
 import os
-import pickle
 from boto3.dynamodb.conditions import Key
 
 LOGGER = logging.getLogger()
@@ -12,6 +11,14 @@ DYNAMO = boto3.resource("dynamodb")
 
 
 def lambda_handler(event, context):
+    """
+    Function responsible for sending the generated imafe data to the an open Websocket API connection.
+    This function will retrieve a connection id to callback to by querying the DynamoDB table for the provided State Machine execution arn.
+
+    :param event: payload containing the encoded image data to be posted to an open websocket connection.
+    :param context: lambda context
+    :return: response with the execution arn
+    """
     LOGGER.info(f"Recieved Event: {event}")
     body = event.get("payload").get("body")
     execution_arn = event.get("executionArn")

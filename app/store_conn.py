@@ -13,6 +13,12 @@ dynamodb = boto3.client("dynamodb")
 
 
 def lambda_handler(event, context):
+    """
+    This function stores the websocket connection id in DynamoDB for 5 minutes.
+    :param event: payload from the API Gateway with the state machine execution arn and websocket connection ID.
+    :param context: lambda context
+    :return: response with the execution arn
+    """
     LOGGER.info(event)
     event_body = json.loads(event.get("body"))
     LOGGER.info(event_body)

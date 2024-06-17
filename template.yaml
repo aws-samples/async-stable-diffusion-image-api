@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: |
-  async-stable-diffusion-image-mgmt-api
-  Sample SAM Template for image-gpt-api
+  async-stable-diffusion-api
+  Sample SAM Template for async-stable-diffusion-api
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
@@ -106,7 +106,7 @@ Resources:
         - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
         - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
 
-  ImageGptApiLogGroup:
+  ImageApiLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: image-api-logs
@@ -120,7 +120,7 @@ Resources:
       RetentionInDays: 60
       KmsKeyId: !GetAtt AsyncImageApiKMSKey.Arn
 
-  ImageGPTApi:
+  ImageApi:
     Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref Stage
@@ -132,7 +132,7 @@ Resources:
         AllowHeaders: "'*'"
         AllowOrigin: "'*'"
       AccessLogSetting:
-        DestinationArn: !GetAtt ImageGptApiLogGroup.Arn
+        DestinationArn: !GetAtt ImageApiLogGroup.Arn
         Format: $context.identity.sourceIp - - [$context.requestTime]
           "$context.httpMethod $context.routeKey $context.protocol"
           $context.status $context.responseLength $context.requestId
@@ -154,7 +154,7 @@ Resources:
       StageName: prod
       DeploymentId: !Ref Deployment
       AccessLogSettings:
-        DestinationArn: !GetAtt ImageGptApiLogGroup.Arn
+        DestinationArn: !GetAtt ImageApiLogGroup.Arn
         Format: $context.identity.sourceIp - - [$context.requestTime]
           "$context.httpMethod $context.routeKey $context.protocol"
           $context.status $context.responseLength $context.requestId
@@ -279,10 +279,10 @@ Resources:
           SFN_ARN: !GetAtt GenerateImageSFN.Arn
       Role: !GetAtt ExecuteSFNFunctionRole.Arn
       Events:
-        ImageGPT:
+        ImageAPI:
           Type: Api
           Properties:
-            RestApiId: !Ref ImageGPTApi
+            RestApiId: !Ref ImageApi
             Path: /generate
             Method: post
             Auth:
@@ -312,7 +312,7 @@ Resources:
                   - sagemaker:InvokeEndpoint
                 Resource:
                   - !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${EndpointName}
-  ImageGPTFunction:
+  ImageFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     # checkov:skip=CKV_AWS_117:Ensure that AWS Lambda function is configured inside a VPC
     # checkov:skip=CKV_AWS_116:Ensure that AWS Lambda function is configured for a Dead Letter Queue(DLQ)
@@ -320,7 +320,7 @@ Resources:
       ReservedConcurrentExecutions: 100
       KmsKeyArn: !GetAtt AsyncImageApiKMSKey.Arn
       CodeUri: app/
-      Handler: generate.lambda_handler
+      Handler: generate_image.lambda_handler
       Runtime: python3.9
       Timeout: 120
       Environment:
@@ -382,7 +382,7 @@ Resources:
     Type: AWS::ApiGateway::UsagePlan
     Properties:
       ApiStages:
-        - ApiId: !Ref ImageGPTApi
+        - ApiId: !Ref ImageApi
           Stage: !Ref Stage
     DependsOn:
       - ImageGPTApiStage
@@ -406,12 +406,12 @@ Resources:
     Properties:
       Type: EXPRESS
       DefinitionSubstitutions:
-        ImageGPTFunctionArn: !GetAtt ImageGPTFunction.Arn
+        ImageGPTFunctionArn: !GetAtt ImageFunction.Arn
         CallbackFunctionArn: !GetAtt CallbackFunction.Arn
       Policies:
         # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
         - LambdaInvokePolicy:
-            FunctionName: !Ref ImageGPTFunction
+            FunctionName: !Ref ImageFunction
         - LambdaInvokePolicy:
             FunctionName: !Ref CallbackFunction
       DefinitionUri: statemachine/generate_image.asl.json
@@ -444,15 +444,15 @@ Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  ImageGPTApi:
-    Description: API Gateway endpoint URL for Prod stage for ImageGPT function
-    Value: !Sub https://${ImageGPTApi}.execute-api.${AWS::Region}.amazonaws.com/{Stage}/
+  ImageApi:
+    Description: API Gateway endpoint URL for Prod stage for Image function
+    Value: !Sub https://${ImageApi}.execute-api.${AWS::Region}.amazonaws.com/{Stage}/
   WebsocketAPI:
     Description: Web socket API url
     Value: !GetAtt ImageWebSocketApi.ApiEndpoint
-  ImageGPTFunction:
-    Description: Image GPT Lambda Function ARN
-    Value: !GetAtt ImageGPTFunction.Arn
-  ImageGPTFunctionIamRole:
-    Description: Implicit IAM Role created for ImageGPT function
-    Value: !GetAtt GenerateFunctionRole.Arn
+  ApiKey:
+    Description: API Key ID to use with the invoke endpoint
+    Value: !GetAtt ApiKey.APIKeyId
+  KMSKeyID:
+    Description: ARN of the key used to encrypt data
+    Value: !GetAtt AsyncImageApiKMSKey.Arn
