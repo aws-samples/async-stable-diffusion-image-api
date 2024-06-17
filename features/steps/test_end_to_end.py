@@ -11,6 +11,7 @@ from PIL import Image
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 
+
 @given("A request is made to the /generate endpoint using text prompt")
 def test_generate(context):
     context.prompt = context.text.replace("\n", " ")

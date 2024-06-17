@@ -10,6 +10,8 @@ LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 
 dynamodb = boto3.client("dynamodb")
+
+
 def lambda_handler(event, context):
     LOGGER.info(event)
     event_body = json.loads(event.get("body"))
@@ -17,7 +19,7 @@ def lambda_handler(event, context):
     exec_arn = event_body.get("data").get("executionArn")
     connection_id = event.get("requestContext").get("connectionId")
     fmt_date_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    expire_at = int(time.time()) + 300 #5 minute TTL
+    expire_at = int(time.time()) + 300  # 5 minute TTL
     uid = uuid.uuid4()
 
     # DYNAMO ACTIONS
@@ -25,12 +27,12 @@ def lambda_handler(event, context):
     dynamodb.put_item(
         TableName=TABLE_NAME,
         Item={
-            'id': {'S': str(uid)},
-            "executionArn": {'S': exec_arn},
-            'connectionId': {'S': connection_id},
-            'date_time': {'S': fmt_date_time},
-            'expire_at': {'N': str(expire_at)}
-        }
+            "id": {"S": str(uid)},
+            "executionArn": {"S": exec_arn},
+            "connectionId": {"S": connection_id},
+            "date_time": {"S": fmt_date_time},
+            "expire_at": {"N": str(expire_at)},
+        },
     )
     LOGGER.info("Write Success!")
 
@@ -39,6 +41,6 @@ def lambda_handler(event, context):
         "headers": {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Credentials": True,
-         },
-        "body": json.dumps({'message': 'success'})
+        },
+        "body": json.dumps({"message": "success"}),
     }
