@@ -9,9 +9,6 @@ TABLE_NAME = os.environ.get("TABLE_NAME", "image-conneciton-table")
 LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 
-dynamodb = boto3.client("dynamodb")
-
-
 def lambda_handler(event, context):
     """
     This function stores the websocket connection id in DynamoDB for 5 minutes.
@@ -30,7 +27,21 @@ def lambda_handler(event, context):
 
     # DYNAMO ACTIONS
     LOGGER.info(f"Writing image data to dynamodb for: {exec_arn}: {connection_id}")
-    dynamodb.put_item(
+    response = put_item(uid, exec_arn, connection_id, fmt_date_time, expire_at)
+    return {
+        "statusCode": 200,
+        "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": True,
+        },
+        "body": json.dumps({"message": "success"}),
+    }
+
+def put_item(uid, exec_arn, connection_id, fmt_date_time, expire_at, client):
+    client = client if client else boto3.client("dynamodb")
+    # DYNAMO ACTIONS
+    LOGGER.info(f"Writing image data to dynamodb for: {exec_arn}: {connection_id}")
+    response = client.put_item(
         TableName=TABLE_NAME,
         Item={
             "id": {"S": str(uid)},
@@ -41,12 +52,4 @@ def lambda_handler(event, context):
         },
     )
     LOGGER.info("Write Success!")
-
-    return {
-        "statusCode": 200,
-        "headers": {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Credentials": True,
-        },
-        "body": json.dumps({"message": "success"}),
-    }
+    return response

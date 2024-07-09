@@ -7,7 +7,6 @@ LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 API_ID = os.getenv("API_ID")
 TABLE_NAME = os.environ.get("TABLE_NAME", "image-conneciton-table")
-DYNAMO = boto3.resource("dynamodb")
 
 
 def lambda_handler(event, context):
@@ -22,13 +21,23 @@ def lambda_handler(event, context):
     LOGGER.info(f"Recieved Event: {event}")
     body = event.get("payload").get("body")
     execution_arn = event.get("executionArn")
-    table = DYNAMO.Table(TABLE_NAME)
-    response = table.query(KeyConditionExpression=Key("executionArn").eq(execution_arn))
+    query_condition = Key("executionArn").eq(execution_arn)
+    response = query_table(execution_arn, query_condition)
+    print(response)
     connection = response.get("Items")[0]["connectionId"]
 
     LOGGER.info(response)
     LOGGER.info(API_ID)
     api_url = f"https://{API_ID}.execute-api.us-east-1.amazonaws.com/prod"
-    apiManagement = boto3.client("apigatewaymanagementapi", endpoint_url=api_url)
-    response = apiManagement.post_to_connection(Data=body, ConnectionId=connection)
+    response = post_to_connection(body, connection, api_url)
     LOGGER.info(f"Success! {response}")
+    return response
+
+def query_table(query_condition, resource):
+    resource = resource if resource else boto3.resource("dynamodb")
+    table = resource.Table(TABLE_NAME)
+    return table.query(KeyConditionExpression=query_condition)
+
+def post_to_connection(body, connection, api_url, client):
+    client = client if client else boto3.client("apigatewaymanagementapi", endpoint_url=api_url)
+    return client.post_to_connection(Data=body, ConnectionId=connection)

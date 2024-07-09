@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: "2010-09-09"
+AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: |
   async-stable-diffusion-api
@@ -24,7 +24,7 @@ Resources:
       Description: KMS key for Async Image API
       EnableKeyRotation: true
       KeyPolicy:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Id: key-policy-1
         Statement:
           - Sid: Enable IAM User Permissions
@@ -33,7 +33,7 @@ Resources:
               AWS:
                 - !Sub arn:aws:iam::${AWS::AccountId}:root
             Action: kms:*
-            Resource: "*"
+            Resource: '*'
           - Sid: Allow Lambda Use of the Key
             Effect: Allow
             Principal:
@@ -44,7 +44,7 @@ Resources:
               - kms:ReEncrypt*
               - kms:GenerateDataKey*
               - kms:DescribeKey
-            Resource: "*"
+            Resource: '*'
             Condition:
               StringEquals:
                 kms:ViaService: !Sub lambda.${AWS::Region}.amazonaws.com
@@ -58,7 +58,7 @@ Resources:
               - kms:ReEncrypt*
               - kms:GenerateDataKey*
               - kms:DescribeKey
-            Resource: "*"
+            Resource: '*'
             Condition:
               StringEquals:
                 kms:ViaService: !Sub logs.${AWS::Region}.amazonaws.com
@@ -72,7 +72,7 @@ Resources:
               - kms:ReEncrypt*
               - kms:GenerateDataKey*
               - kms:DescribeKey
-            Resource: "*"
+            Resource: '*'
             Condition:
               StringEquals:
                 kms:ViaService: !Sub apigateway.${AWS::Region}.amazonaws.com
@@ -86,7 +86,7 @@ Resources:
               - kms:ReEncrypt*
               - kms:GenerateDataKey*
               - kms:DescribeKey
-            Resource: "*"
+            Resource: '*'
             Condition:
               ArnLike:
                 kms:EncryptionContext:aws:logs:arn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
@@ -95,7 +95,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -126,11 +126,11 @@ Resources:
       StageName: !Ref Stage
       TracingEnabled: true
       CacheClusterEnabled: true
-      CacheClusterSize: "0.5"
+      CacheClusterSize: '0.5'
       Cors:
-        AllowMethods: "'*'"
-        AllowHeaders: "'*'"
-        AllowOrigin: "'*'"
+        AllowMethods: '''*'''
+        AllowHeaders: '''*'''
+        AllowOrigin: '''*'''
       AccessLogSetting:
         DestinationArn: !GetAtt ImageApiLogGroup.Arn
         Format: $context.identity.sourceIp - - [$context.requestTime]
@@ -174,7 +174,7 @@ Resources:
       - WebSocketRoute
     Properties:
       ApiId: !Ref ImageWebSocketApi
-      StageName: ""
+      StageName: ''
 
   WebSocketIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -187,7 +187,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -200,7 +200,7 @@ Resources:
       Policies:
         - PolicyName: LambdaFunctionRolePolicy
           PolicyDocument:
-            Version: "2012-10-17" # Policy Document
+            Version: '2012-10-17' # Policy Document
             Statement:
               - Effect: Allow
                 Action:
@@ -243,7 +243,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -256,7 +256,7 @@ Resources:
       Policies:
         - PolicyName: LambdaFunctionRolePolicy
           PolicyDocument:
-            Version: "2012-10-17" # Policy Document
+            Version: '2012-10-17' # Policy Document
             Statement:
               - Effect: Allow
                 Action:
@@ -292,7 +292,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -305,7 +305,7 @@ Resources:
       Policies:
         - PolicyName: LambdaFunctionRolePolicy
           PolicyDocument:
-            Version: "2012-10-17" # Policy Document
+            Version: '2012-10-17' # Policy Document
             Statement:
               - Effect: Allow
                 Action:
@@ -334,7 +334,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -347,7 +347,7 @@ Resources:
       Policies:
         - PolicyName: LambdaFunctionRolePolicy
           PolicyDocument:
-            Version: "2012-10-17" # Policy Document
+            Version: '2012-10-17' # Policy Document
             Statement:
               - Effect: Allow
                 Action:

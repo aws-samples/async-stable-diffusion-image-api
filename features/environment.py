@@ -15,7 +15,7 @@ def before_all(context):
         raise
 
     client = boto3.client("apigateway")
-    context.api_key = client.get_api_key(
+    context.api_key = boto3.client("apigateway").get_api_key(
         apiKey=os.environ.get("API_KEY_ID"), includeValue=True
     )["value"]
     context.websocket_api_url = f"wss://{os.environ.get('WSS_API_ID')}.execute-api.us-east-1.amazonaws.com/prod/"
