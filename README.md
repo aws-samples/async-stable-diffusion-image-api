@@ -1,4 +1,4 @@
-# asynchronous-stable-diffusion-image-management-api
+# asynchronous-stable-diffusion-image-api
 
 This project contains AWS resources to support the generation of images using an existing Sagemaker Endpoint and API Gateway and AWS Lambda. 
 
