@@ -2,7 +2,6 @@ import json
 import os
 import boto3
 from botocore.response import StreamingBody
-from app.error_response import build_error_response
 
 ENDPOINT = os.getenv("ENDPOINT_NAME", "jumpstart-dft-stable-diffusion-v2-1-base")
 
@@ -34,7 +33,8 @@ def lambda_handler(event, context):
         body_content = json.loads(body_content.decode("utf-8"))
     if not body_content:
         return build_error_response(
-            500, "Body is missing from repsonse, something has gone wrong with the model response!"
+            500,
+            "Body is missing from repsonse, something has gone wrong with the model response!",
         )
     return {
         "statusCode": 200,
@@ -46,7 +46,8 @@ def lambda_handler(event, context):
         ),
     }
 
-def invoke(payload, client, endpoint=ENDPOINT):
+
+def invoke(payload, client=None, endpoint=ENDPOINT):
     client = client if client else boto3.client("runtime.sagemaker")
     return client.invoke_endpoint(
         EndpointName=endpoint,
@@ -54,3 +55,14 @@ def invoke(payload, client, endpoint=ENDPOINT):
         Accept="application/json;jpeg",
         Body=payload,
     )
+
+
+def build_error_response(status_code, error_message):
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": True,
+        },
+        "body": json.dumps({"error": error_message}),
+    }

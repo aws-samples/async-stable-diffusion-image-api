@@ -50,4 +50,6 @@ class TestStoreConnection(TestCase):
         }
         response = lambda_handler(test_context, {})
         self.assertEqual(expected_response, response)
-        put_item.assert_called_once_with(UID, EXEC_ARN, CONN_ID, FMT_DT_TM, int(EXPIRE_AT) + 300)
+        put_item.assert_called_once_with(
+            UID, EXEC_ARN, CONN_ID, FMT_DT_TM, int(EXPIRE_AT) + 300
+        )

@@ -9,6 +9,7 @@ TABLE_NAME = os.environ.get("TABLE_NAME", "image-conneciton-table")
 LOGGER = logging.getLogger()
 LOGGER.setLevel(logging.INFO)
 
+
 def lambda_handler(event, context):
     """
     This function stores the websocket connection id in DynamoDB for 5 minutes.
@@ -37,7 +38,8 @@ def lambda_handler(event, context):
         "body": json.dumps({"message": "success"}),
     }
 
-def put_item(uid, exec_arn, connection_id, fmt_date_time, expire_at, client):
+
+def put_item(uid, exec_arn, connection_id, fmt_date_time, expire_at, client=None):
     client = client if client else boto3.client("dynamodb")
     # DYNAMO ACTIONS
     LOGGER.info(f"Writing image data to dynamodb for: {exec_arn}: {connection_id}")
