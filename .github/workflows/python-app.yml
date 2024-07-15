@@ -32,11 +32,12 @@ jobs:
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12
         with:
-          file: template.yal
+          file: template.yaml
           soft_fail: false
       
       - name: Run cfn_nag
         uses: stelligent/cfn_nag@master
         with:
           input_path: tamplate.yaml
+          
       
