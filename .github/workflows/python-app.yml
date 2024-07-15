@@ -1,26 +1,43 @@
 name: Python application
 
-on:
-  push
-  
+on: push
+
 permissions:
   contents: read
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.10"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    - name: Test
-      run: |
-        behave
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Test
+        run: |
+          pytest -vvv tests/unit
+      - name: Formatter Check
+        run: |
+          black app/ tests/ --check
+      - name: Check for formatting error  
+        if: failure()
+        run: echo "There was a formatting error. Please run black command across the project."
+      
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          file: template.yaml
+          soft_fail: false
+      
+      - name: Run cfn_nag
+        uses: stelligent/cfn_nag@master
+        with:
+          input_path: tamplate.yaml
+          
+      
