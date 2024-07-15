@@ -22,3 +22,18 @@ jobs:
       - name: Test
         run: |
           pytest -vvv tests/unit
+      - name: Formatter Check
+        run: |
+          black app/ tests/ --check
+      - name: Check for formatting error  
+        if: failure()
+        run: echo "There was a formatting error. Please run black command across the project."
+      
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          file: template.yml
+      
+      - name: Run cfn_nag
+        uses: stelligent/cfn_nag@master
+      
