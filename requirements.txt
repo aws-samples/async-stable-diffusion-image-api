@@ -4,3 +4,4 @@ boto3
 pillow
 requests
 websockets
+pytest
