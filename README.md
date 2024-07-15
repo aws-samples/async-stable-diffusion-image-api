@@ -12,20 +12,12 @@ This project assumes that a Sagemaker Endpoint is already running in the target 
 ## Resources Deployed
 - Rest API
   - `POST /generate`: Begins asynchronous workflow for image generation using a prompt strign as the payload.
-  - `POST /save`: Saves the codified image data to S3 and stores image metadata in a DynamoDb table.
-  - `GET /images`: Retrieves all image data from DynamoDb.
 - Websocket API
   - `$default`: Triggers Lambda to store the connection:Step Function execution pair and waits for the callback message containing the image data payload.
 - GenerateImageSFN
   - State machine that contains two Lambda Functions. One that calls the Sagemaker Endpoint with the image prompt payload and then passes the image data to a callback function which issues the callback to the websocket API.
 - Socket Connections Table
   - DynamoDb table responsible for storing StepFunction Execution ARNs alongside the websocket connection ID for callback.
-- Image Data Table:
-  - DynamoDb Table responsible for saved image metadata including the object key for later S3 retrieval.
-- Image S3 Bucket:
-  - S3 Bucket for storing saved images.
-- CloudFront CDN:
-  - CDN in front of the S3 image bucket.
 
 ## Deploy the sample application
 
