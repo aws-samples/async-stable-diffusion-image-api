@@ -32,7 +32,7 @@ jobs:
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12
         with:
-          file: template.yaml
+          file: template.yal
           soft_fail: false
       
       - name: Run cfn_nag
